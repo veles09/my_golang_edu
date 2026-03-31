@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>МЕЛ — Система управления обучением</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: #f0f2f5; overflow: hidden; }
+        
+        /* Сетка Учителя */
+        #teacher-ui { display: grid; grid-template-columns: 240px 1fr 280px; height: 100vh; }
+        .panel { background: white; border: 1px solid #ddd; display: flex; flex-direction: column; }
+        .header { background: #f8f9fa; padding: 10px; font-weight: bold; border-bottom: 1px solid #ddd; text-align: center; }
+
+        /* Стек заданий */
+        .task-card { 
+            margin: 10px; padding: 15px; background: #e9ecef; border: 2px dashed #adb5bd; 
+            border-radius: 8px; cursor: pointer; transition: 0.2s;
+        }
+        .task-card:hover { background: #dee2e6; border-color: #2f3542; }
+
+        /* Мониторинг */
+        .student-widget { 
+            background: #2f3542; height: 150px; margin: 10px; border-radius: 8px;
+            position: relative; border: 4px solid #2f3542; cursor: pointer;
+        }
+        .student-widget.active { border-color: #ff4757; animation: pulse 1.5s infinite; }
+        .label { position: absolute; bottom: 0; width: 100%; background: rgba(0,0,0,0.6); color: white; padding: 5px; font-size: 11px; }
+
+        /* Вид Ученика */
+        #student-ui { display: none; width: 100vw; height: 100vh; background: white; position: relative; }
+        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000; display: none; cursor: not-allowed; }
+        #t-cursor { position: absolute; width: 20px; height: 20px; background: #ff4757; border-radius: 50%; border: 2px solid white; z-index: 1001; display: none; pointer-events: none; }
+
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(255, 71, 87, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0); } }
+    </style>
+</head>
+<body>
+
+ <!-- ИНТЕРФЕЙС УЧИТЕЛЯ -->
+<div id="teacher-ui" style="display: none; position: relative; width: 100vw; height: 100vh;">
+    
+    <!-- ГЛАВНОЕ ОКНО: EXCALIDRAW -->
+    <iframe id="board" src="https://excalidraw.com" 
+            style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; z-index: 1;">
+    </iframe>
+
+    <!-- ВИДЖЕТ 1: СТЕК ЗАДАНИЙ -->
+    <div id="task-widget" class="floating-window" style="top: 80px; left: 20px; width: 240px;">
+        <div class="window-header" id="task-header">📚 СТЕК ЗАДАНИЙ</div>
+        <div class="window-content">
+            <div class="task-card-mini" onclick="publishTask('PDF: Робототехника')">📄 Робототехника.pdf</div>
+            <div class="task-card-mini" onclick="publishTask('Схема: Мотор')">🖼 Схема мотора.png</div>
+            <button class="add-task-btn">+ Добавить файл</button>
+        </div>
+    </div>
+
+    <!-- ВИДЖЕТ 2: МОНИТОРИНГ КЛАССА -->
+    <div id="monitor-widget" class="floating-window" style="top: 80px; right: 20px; width: 220px;">
+        <div class="window-header" id="monitor-header">👥 УЧЕНИКИ (1)</div>
+        <div class="window-content" id="student-list">
+            <div class="student-widget" id="widget-s1" onclick="toggleControl('student1')">
+                <div class="student-screen-placeholder">ЭКРАН student1</div>
+                <div class="label">Иванов Иван</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Стили плавающих окон */
+    .floating-window {
+        position: absolute;
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(5px); /* Эффект стекла */
+        border: 1px solid #ccc;
+        border-radius: 10px;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+        z-index: 100; /* Выше доски */
+        overflow: hidden;
+    }
+    .window-header {
+        background: #2f3542;
+        color: white;
+        padding: 10px;
+        cursor: move;
+        font-weight: bold;
+        font-size: 13px;
+        user-select: none;
+    }
+    .window-content { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    
+    .task-card-mini {
+        padding: 8px; background: white; border: 1px solid #ddd; 
+        border-radius: 6px; cursor: pointer; font-size: 13px; transition: 0.2s;
+    }
+    .task-card-mini:hover { border-color: #ff4757; background: #fff5f5; }
+    
+    .add-task-btn { border: 1px dashed #aaa; background: none; padding: 5px; cursor: pointer; border-radius: 5px; font-size: 11px; }
+
+    .student-widget { background: #000; border-radius: 6px; position: relative; border: 3px solid #2f3542; cursor: pointer; height: 110px; }
+    .student-widget.active { border-color: #ff4757; box-shadow: 0 0 15px rgba(255, 71, 87, 0.5); }
+    .student-screen-placeholder { color: #555; text-align: center; padding-top: 40px; font-size: 9px; }
+    .label { position: absolute; bottom: 0; width: 100%; background: rgba(0,0,0,0.7); color: white; padding: 4px; font-size: 10px; }
+</style>
+
+    <!-- ИНТЕРФЕЙС УЧЕНИКА -->
+    <div id="student-ui">
+        <div id="overlay"></div>
+        <div id="t-cursor"></div>
+        <div id="task-content" style="padding: 100px; text-align: center;">
+            <h1 id="current-task">Ожидание задания...</h1>
+            <p>Когда учитель пришлет файл, он появится здесь.</p>
+        </div>
+    </div>
+
+    <script>
+    // 1. ИНИЦИАЛИЗАЦИЯ ПАРАМЕТРОВ
+    const params = new URLSearchParams(window.location.search);
+    const role = params.get('role') || 'student';
+    const id = params.get('id') || (role === 'teacher' ? 'profi' : 'student1');
+    
+    // Подключаемся к Go-серверу
+    const ws = new WebSocket(`ws://${window.location.host}/ws?id=${id}&role=${role}`);
+    
+    let isIntercepting = false;
+    let currentTargetId = 'student1'; // Кого контролируем
+const taskWidget = document.getElementById('task-widget');
+const taskHeader = document.getElementById('task-widget-header');
+
+if (taskHeader) {
+    taskHeader.onmousedown = function(event) {
+        // Запрещаем выделение текста при перетаскивании
+        event.preventDefault(); 
+
+        // Вычисляем сдвиг курсора относительно угла виджета
+        let shiftX = event.clientX - taskWidget.getBoundingClientRect().left;
+        let shiftY = event.clientY - taskWidget.getBoundingClientRect().top;
+
+        function moveAt(clientX, clientY) {
+            taskWidget.style.left = clientX - shiftX + 'px';
+            taskWidget.style.top = clientY - shiftY + 'px';
+        }
+
+        function onMouseMove(event) {
+            moveAt(event.clientX, event.clientY);
+        }
+
+        // Слушаем движение по всему документу, чтобы не "терять" виджет при быстром движении
+        document.addEventListener('mousemove', onMouseMove);
+
+        // Отпускаем виджет
+        document.onmouseup = function() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.onmouseup = null;
+        };
+    };
+
+    // Отключаем стандартный браузерный Drag-and-Drop
+    taskHeader.ondragstart = function() {
+        return false;
+    };
+}
+    // Переключение интерфейса при загрузке
+    if (role === 'teacher') {
+        document.getElementById('teacher-ui').style.display = 'grid';
+        document.getElementById('student-ui').style.display = 'none';
+    } else {
+        document.getElementById('teacher-ui').style.display = 'none';
+        document.getElementById('student-ui').style.display = 'block';
+    }
+
+    // 2. ЛОГИКА УЧИТЕЛЯ
+    if (role === 'teacher') {
+        // Функция включения/выключения перехвата
+        window.toggleControl = function(sid) {
+            currentTargetId = sid;
+            isIntercepting = !isIntercepting;
+            
+            // Визуальная индикация на виджете
+            const widget = document.getElementById('widget-s1');
+            if (isIntercepting) {
+                widget.classList.add('active');
+            } else {
+                widget.classList.remove('active');
+            }
+
+            // Отправляем команду блокировки на Go-сервер
+            ws.send(JSON.stringify({
+                type: "lock_toggle",
+                target_id: currentTargetId,
+                payload: isIntercepting.toString()
+            }));
+        };
+
+        // Отправка координат при движении мыши
+        window.addEventListener('mousemove', (e) => {
+            if (!isIntercepting) return;
+
+            // Считаем относительные координаты (от 0 до 1)
+            const x = e.clientX / window.innerWidth;
+            const y = e.clientY / window.innerHeight;
+
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: "mouse_move",
+                    target_id: currentTargetId,
+                    x: x,
+                    y: y
+                }));
+            }
+        });
+
+        // Функция публикации задания из стека
+        window.publishTask = function(taskName) {
+            ws.send(JSON.stringify({
+                type: "publish_task",
+                target_id: "all",
+                payload: taskName
+            }));
+            console.log("Задание отправлено: " + taskName);
+        };
+    }
+
+    // 3. ЛОГИКА УЧЕНИКА
+    ws.onmessage = (e) => {
+        const cmd = JSON.parse(e.data);
+        const cursor = document.getElementById('t-cursor');
+        const overlay = document.getElementById('overlay');
+        const taskTitle = document.getElementById('current-task');
+
+        switch(cmd.type) {
+            case "lock_toggle":
+                const locked = (cmd.payload === "true");
+                overlay.style.display = locked ? 'block' : 'none';
+                cursor.style.display = locked ? 'block' : 'none';
+                break;
+
+            case "mouse_move":
+                // Пересчитываем относительные координаты в пиксели ученика
+                const realX = cmd.x * window.innerWidth;
+                const realY = cmd.y * window.innerHeight;
+                cursor.style.left = realX + 'px';
+                cursor.style.top = realY + 'px';
+                break;
+
+            case "publish_task":
+                if (taskTitle) {
+                    taskTitle.innerText = "ЗАДАНИЕ: " + cmd.payload;
+                }
+                break;
+        }
+    };
+
+    ws.onopen = () => console.log(`Соединение установлено как ${role}`);
+    ws.onerror = (err) => console.error("Ошибка WebSocket:", err);
+
+    function makeDraggable(windowId, headerId) {
+    const win = document.getElementById(windowId);
+    const header = document.getElementById(headerId);
+
+    header.onmousedown = function(e) {
+        e.preventDefault();
+        let shiftX = e.clientX - win.getBoundingClientRect().left;
+        let shiftY = e.clientY - win.getBoundingClientRect().top;
+
+        function moveAt(pageX, pageY) {
+            win.style.left = pageX - shiftX + 'px';
+            win.style.top = pageY - shiftY + 'px';
+            win.style.right = 'auto'; // Сбрасываем привязку к правой стороне
+        }
+
+        function onMouseMove(e) { moveAt(e.clientX, e.clientY); }
+
+        document.addEventListener('mousemove', onMouseMove);
+
+        document.onmouseup = function() {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.onmouseup = null;
+        };
+    };
+    header.ondragstart = () => false;
+}
+
+// Активируем перетаскивание для обоих виджетов
+makeDraggable('task-widget', 'task-header');
+makeDraggable('monitor-widget', 'monitor-header');
+</script>
+</body>
+</html>
